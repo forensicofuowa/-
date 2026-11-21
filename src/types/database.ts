@@ -68,6 +68,7 @@ export interface Lecture {
   uploader_id: string;
   lecture_number: number;
   semester: number;
+  category?: FileCategory;
   title: string;
   description: string | null;
   status: LectureStatus;

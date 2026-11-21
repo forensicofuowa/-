@@ -13,6 +13,7 @@ const lectureInputSchema = z.object({
   academicYearId: z.string().uuid("يرجى اختيار السنة الدراسية."),
   lectureNumber: z.number().int().min(1).max(999),
   semester: z.number().int().min(1).max(2).default(1),
+  category: z.enum(["theory", "practical"]).optional().default("theory"),
   title: z.string().min(2, "يرجى إدخال عنوان المحاضرة.").max(200),
   description: z.string().max(2000).optional(),
   status: z.enum(["draft", "published", "archived"]),
@@ -61,6 +62,79 @@ function revalidateAllLectures() {
   }
 }
 
+async function insertLectureWithCategoryFallback(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  payload: {
+    department_id: string;
+    subject_id: string;
+    academic_year_id: string;
+    uploader_id: string;
+    lecture_number: number;
+    semester: number;
+    category: "theory" | "practical";
+    title: string;
+    description: string | null;
+    status: "draft" | "published" | "archived";
+  }
+) {
+  const withCat = await supabase
+    .from("lectures")
+    .insert(payload)
+    .select("id")
+    .maybeSingle();
+
+  if (
+    withCat.error &&
+    (withCat.error.message?.includes("category") || withCat.error.code === "42703")
+  ) {
+    const { category: _ignored, ...withoutCategory } = payload;
+    return await supabase
+      .from("lectures")
+      .insert(withoutCategory)
+      .select("id")
+      .maybeSingle();
+  }
+
+  return withCat;
+}
+
+async function updateLectureWithCategoryFallback(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  payload: {
+    subject_id: string;
+    academic_year_id: string;
+    lecture_number: number;
+    semester: number;
+    category: "theory" | "practical";
+    title: string;
+    description: string | null;
+    status: "draft" | "published" | "archived";
+  }
+) {
+  const withCat = await supabase
+    .from("lectures")
+    .update(payload)
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (
+    withCat.error &&
+    (withCat.error.message?.includes("category") || withCat.error.code === "42703")
+  ) {
+    const { category: _ignored, ...withoutCategory } = payload;
+    return await supabase
+      .from("lectures")
+      .update(withoutCategory)
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
+  }
+
+  return withCat;
+}
+
 export async function saveLectureAction(
   id: string | null,
   input: z.infer<typeof lectureInputSchema>
@@ -79,24 +153,20 @@ export async function saveLectureAction(
   const supabase = await createClient();
 
   if (id) {
-    const { data, error } = await supabase
-      .from("lectures")
-      .update({
-        subject_id: v.subjectId,
-        academic_year_id: v.academicYearId,
-        lecture_number: v.lectureNumber,
-        semester: v.semester,
-        title: v.title.trim(),
-        description: v.description?.trim() || null,
-        status: v.status,
-      })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
+    const { data, error } = await updateLectureWithCategoryFallback(supabase, id, {
+      subject_id: v.subjectId,
+      academic_year_id: v.academicYearId,
+      lecture_number: v.lectureNumber,
+      semester: v.semester,
+      category: v.category,
+      title: v.title.trim(),
+      description: v.description?.trim() || null,
+      status: v.status,
+    });
 
     if (error) {
       if (error.code === "23505") {
-        return { ok: false, error: "يوجد محاضرة أخرى بنفس الرقم لهذه المادة والسنة الدراسية." };
+        return { ok: false, error: "يوجد محاضرة أخرى بنفس الرقم ونفس النوع (نظري/عملي) لهذه المادة." };
       }
       return { ok: false, error: "تعذّر تحديث المحاضرة. تحقق من صلاحياتك." };
     }
@@ -107,7 +177,7 @@ export async function saveLectureAction(
       action: "lecture.updated",
       entityType: "lecture",
       entityId: data.id,
-      metadata: { title: v.title.trim(), lectureNumber: v.lectureNumber, semester: v.semester },
+      metadata: { title: v.title.trim(), lectureNumber: v.lectureNumber, semester: v.semester, category: v.category },
     });
 
     let notificationNote: string | undefined;
@@ -147,25 +217,22 @@ export async function saveLectureAction(
 
   if (!subject) return { ok: false, error: "المادة المختارة غير موجودة." };
 
-  const { data, error } = await supabase
-    .from("lectures")
-    .insert({
-      department_id: subject.department_id,
-      subject_id: v.subjectId,
-      academic_year_id: v.academicYearId,
-      uploader_id: profile.id,
-      lecture_number: v.lectureNumber,
-      semester: v.semester,
-      title: v.title.trim(),
-      description: v.description?.trim() || null,
-      status: v.status,
-    })
-    .select("id")
-    .maybeSingle();
+  const { data, error } = await insertLectureWithCategoryFallback(supabase, {
+    department_id: subject.department_id,
+    subject_id: v.subjectId,
+    academic_year_id: v.academicYearId,
+    uploader_id: profile.id,
+    lecture_number: v.lectureNumber,
+    semester: v.semester,
+    category: v.category,
+    title: v.title.trim(),
+    description: v.description?.trim() || null,
+    status: v.status,
+  });
 
   if (error) {
     if (error.code === "23505") {
-      return { ok: false, error: "رقم المحاضرة محجوز مسبقاً في هذه المادة." };
+      return { ok: false, error: "رقم المحاضرة محجوز مسبقاً لنفس النوع (نظري/عملي) في هذه المادة." };
     }
     return { ok: false, error: "تعذّر إنشاء المحاضرة. تأكد أن المادة مسندة لك أو لديك صلاحية إدارية." };
   }
@@ -176,7 +243,7 @@ export async function saveLectureAction(
     action: "lecture.created",
     entityType: "lecture",
     entityId: data.id,
-    metadata: { title: v.title.trim(), lectureNumber: v.lectureNumber, semester: v.semester },
+    metadata: { title: v.title.trim(), lectureNumber: v.lectureNumber, semester: v.semester, category: v.category },
   });
 
   let notificationNote: string | undefined;
@@ -249,21 +316,19 @@ export async function importSelectedLecturesAction(
   let lastInserted: { id: string; lectureNumber: number; semester: number; title: string } | null = null;
 
   for (const item of lectures) {
-    const { data: insRow, error } = await supabase
-      .from("lectures")
-      .insert({
-        department_id: subject.department_id,
-        subject_id: subject.id,
-        academic_year_id: academicYearId,
-        uploader_id: profile.id,
-        lecture_number: item.lectureNumber,
-        semester: item.semester,
-        title: item.title.trim(),
-        description: item.description?.trim() || null,
-        status,
-      })
-      .select("id")
-      .maybeSingle();
+    const itemCategory = item.category ?? "theory";
+    const { data: insRow, error } = await insertLectureWithCategoryFallback(supabase, {
+      department_id: subject.department_id,
+      subject_id: subject.id,
+      academic_year_id: academicYearId,
+      uploader_id: profile.id,
+      lecture_number: item.lectureNumber,
+      semester: item.semester,
+      category: itemCategory,
+      title: item.title.trim(),
+      description: item.description?.trim() || null,
+      status,
+    });
 
     if (error || !insRow) {
       skipped++;
@@ -272,7 +337,7 @@ export async function importSelectedLecturesAction(
       createdLectures.push({
         clientKey: item.clientKey,
         lectureId: insRow.id,
-        category: item.category ?? "theory",
+        category: itemCategory,
       });
       lastInserted = {
         id: insRow.id,
@@ -286,7 +351,7 @@ export async function importSelectedLecturesAction(
   if (inserted === 0 && skipped > 0) {
     return {
       ok: false,
-      error: "لم تتم إضافة أي محاضرة؛ قد تكون أرقام المحاضرات مكررة مسبقاً في هذه المادة أو المادة غير مسندة لك.",
+      error: "لم تتم إضافة أي محاضرة؛ قد تكون أرقام المحاضرات مكررة لنفس النوع (نظري/عملي) في هذه المادة أو المادة غير مسندة لك.",
     };
   }
 

@@ -73,13 +73,16 @@ export default async function AdminLecturesPage() {
                 const sub = subjectMap.get(lec.subject_id);
                 const readyFiles = readyCountByLecture.get(lec.id) ?? 0;
                 const authorName = profileMap.get(lec.uploader_id) ?? "—";
+                const catLabel = lec.category === "practical" ? "عملي" : "نظري";
                 return (
                   <tr key={lec.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
                     <td className="px-4 py-3">
                       <p className="font-semibold text-slate-900 dark:text-slate-100">
                         #{lec.lecture_number} — {lec.title}
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">بواسطة: {authorName}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {catLabel} • بواسطة: {authorName}
+                      </p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-slate-800 dark:text-slate-200">{sub?.name ?? "—"}</p>

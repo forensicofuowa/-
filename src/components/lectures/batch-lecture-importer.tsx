@@ -30,7 +30,7 @@ const TEXT_EXTS = new Set(["json", "csv", "txt"]);
 const SAMPLE_JSON = `[
   { "lectureNumber": 1, "semester": 1, "category": "theory", "title": "مقدمة في الأدلة الجنائية", "description": "تعريف العلم الجنائي ومجالاته" },
   { "lectureNumber": 2, "semester": 1, "category": "theory", "title": "إدارة مسرح الجريمة", "description": "طوق الأمان وحماية الآثار المادية" },
-  { "lectureNumber": 3, "semester": 2, "category": "practical", "title": "رفع الآثار البيولوجية عملي", "description": "البقع الدموية والشعر واللعاب" }
+  { "lectureNumber": 1, "semester": 1, "category": "practical", "title": "رفع الآثار البيولوجية عملي", "description": "البقع الدموية والشعر واللعاب" }
 ]`;
 
 type FileUploadState = "idle" | "uploading" | "done" | "error";
@@ -92,10 +92,21 @@ export function BatchLectureImporter({
     }
 
     setItems((prev) => {
-      const startNum = prev.length > 0 ? Math.max(...prev.map((x) => x.lectureNumber)) : 0;
-      const renumbered = parsed.map((p, idx) =>
-        prev.length > 0 ? { ...p, lectureNumber: startNum + idx + 1 } : p
-      );
+      const startNumByCat = new Map<FileCategory, number>();
+      for (const x of prev) {
+        const currentMax = startNumByCat.get(x.category) ?? 0;
+        if (x.lectureNumber > currentMax) {
+          startNumByCat.set(x.category, x.lectureNumber);
+        }
+      }
+      const addedPerCat = new Map<FileCategory, number>();
+      const renumbered = parsed.map((p) => {
+        const baseMax = startNumByCat.get(p.category) ?? 0;
+        if (baseMax === 0) return p;
+        const offset = (addedPerCat.get(p.category) ?? 0) + 1;
+        addedPerCat.set(p.category, offset);
+        return { ...p, lectureNumber: baseMax + offset };
+      });
       return [...prev, ...renumbered];
     });
   }
@@ -299,7 +310,7 @@ export function BatchLectureImporter({
       failedFilesCount > 0 ? ` (تعذّر رفع ${failedFilesCount} ملف — راجع الحالة بالجدول)` : "";
     const skippedText =
       res.skipped > 0
-        ? ` (تم تخطي ${res.skipped} محاضرة بسبب تكرار رقم المحاضرة)`
+        ? ` (تم تخطي ${res.skipped} محاضرة بسبب تكرار رقم المحاضرة لنفس النوع)`
         : "";
 
     setResultMsg({
