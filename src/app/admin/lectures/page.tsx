@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { deleteLectureAction } from "@/app/lectures/actions";
+import { PurgeAllLecturesButton } from "@/components/lectures/purge-all-lectures-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,7 +44,8 @@ export default async function AdminLecturesPage() {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">إدارة المحاضرات ({lectures?.length ?? 0})</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">إنشاء وتعديل المحاضرات وتصنيفها حسب الفصل والمرفقات</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <PurgeAllLecturesButton totalCount={lectures?.length ?? 0} />
           <Link href="/admin/lectures/import">
             <Button variant="outline">رفع ملف مجموعة محاضرات</Button>
           </Link>

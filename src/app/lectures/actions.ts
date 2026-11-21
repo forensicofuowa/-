@@ -346,6 +346,66 @@ export async function deleteLectureAction(lectureId: string) {
   revalidateAllLectures();
 }
 
+export async function purgeAllLecturesAction(): Promise<
+  { ok: true; deletedCount: number; deletedFilesCount: number } | { ok: false; error: string }
+> {
+  const profile = await getSessionProfile();
+  if (!profile || profile.status !== "active" || !["admin", "super_admin"].includes(profile.role)) {
+    return { ok: false, error: "غير مصرح لك بتنظيف جميع المحاضرات." };
+  }
+
+  const admin = createAdminClient();
+
+  const [{ data: allLectures, error: lecFetchErr }, { data: allFiles }] = await Promise.all([
+    admin.from("lectures").select("id"),
+    admin.from("lecture_files").select("storage_path"),
+  ]);
+
+  if (lecFetchErr) {
+    return { ok: false, error: "تعذّر جلب المحاضرات الحالية." };
+  }
+
+  const lectureIds = (allLectures ?? []).map((l) => l.id);
+  const storagePaths = (allFiles ?? []).map((f) => f.storage_path).filter(Boolean);
+
+  if (lectureIds.length === 0 && storagePaths.length === 0) {
+    return { ok: true, deletedCount: 0, deletedFilesCount: 0 };
+  }
+
+  if (storagePaths.length > 0) {
+    for (let i = 0; i < storagePaths.length; i += 100) {
+      const chunk = storagePaths.slice(i, i + 100);
+      await admin.storage.from("lectures").remove(chunk).catch(() => {});
+    }
+  }
+
+  await admin.from("lecture_files").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+
+  const { error: delErr } = await admin
+    .from("lectures")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+
+  if (delErr) {
+    return { ok: false, error: `تعذّر حذف المحاضرات: ${delErr.message}` };
+  }
+
+  await logActivity({
+    actorId: profile.id,
+    action: "lecture.purged_all",
+    entityType: "lecture",
+    entityId: profile.id,
+    metadata: { deletedLectures: lectureIds.length, deletedFiles: storagePaths.length },
+  });
+
+  revalidateAllLectures();
+  return {
+    ok: true,
+    deletedCount: lectureIds.length,
+    deletedFilesCount: storagePaths.length,
+  };
+}
+
 export async function updateLectureFileCategoryAction(
   fileId: string,
   category: "theory" | "practical"
