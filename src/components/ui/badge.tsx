@@ -7,7 +7,7 @@ export function Badge({
   className,
 }: {
   children: React.ReactNode;
-  tone?: "slate" | "green" | "amber" | "red" | "indigo" | "teal";
+  tone?: "slate" | "green" | "amber" | "red" | "indigo" | "teal" | "emerald";
   className?: string;
 }) {
   const tones = {
@@ -17,6 +17,7 @@ export function Badge({
     red: "bg-red-100 text-red-700 dark:bg-red-950/70 dark:text-red-300",
     indigo: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300",
     teal: "bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-300",
+    emerald: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300",
   };
   return (
     <span

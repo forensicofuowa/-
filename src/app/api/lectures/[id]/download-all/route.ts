@@ -50,7 +50,7 @@ export async function GET(
     zip.file(entryName, arrBuf);
   }
 
-  const zipBuffer = await zip.generateAsync({ type: "uint8array" });
+  const zipBuffer = await zip.generateAsync({ type: "arraybuffer" });
   const safeAsciiName = `lecture-${lecture.lecture_number}-files.zip`;
   const encodedUtf8Name = encodeURIComponent(`محاضرة_${lecture.lecture_number}_${lecture.title}.zip`);
 
