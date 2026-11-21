@@ -79,7 +79,10 @@ export interface ParsedBatchLecture {
   tempId: string;
   lectureNumber: number;
   semester: number;
+  category: FileCategory;
   title: string;
   description: string;
   selected: boolean;
+  sourceFile?: File;
+  sourceFileName?: string;
 }

@@ -1,4 +1,4 @@
-import type { ParsedBatchLecture } from "@/types/database";
+import type { FileCategory, ParsedBatchLecture } from "@/types/database";
 
 const TEXT_LIKE_EXTS = new Set(["json", "csv", "txt"]);
 
@@ -59,9 +59,27 @@ function stripExtension(name: string): string {
   return dotIdx > 0 ? base.slice(0, dotIdx) : base;
 }
 
+function detectCategoryFromText(text: string, fallback: FileCategory): FileCategory {
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("عملي") ||
+    lower.includes("مختبر") ||
+    lower.includes("تطبيق") ||
+    lower.includes("practical") ||
+    lower.includes("lab")
+  ) {
+    return "practical";
+  }
+  if (lower.includes("نظري") || lower.includes("theory")) {
+    return "theory";
+  }
+  return fallback;
+}
+
 export function parseLecturesFromUploadedFiles(
-  entries: Array<{ name: string; textContent: string }>,
-  defaultSemester = 1
+  entries: Array<{ name: string; textContent: string; file?: File }>,
+  defaultSemester = 1,
+  defaultCategory: FileCategory = "theory"
 ): ParsedBatchLecture[] {
   const items: ParsedBatchLecture[] = [];
 
@@ -69,7 +87,7 @@ export function parseLecturesFromUploadedFiles(
     const lowerName = entry.name.toLowerCase();
     const dotIdx = lowerName.lastIndexOf(".");
     const ext = dotIdx >= 0 ? lowerName.slice(dotIdx + 1) : "";
-    const cleaned = entry.textContent.replace(/^﻿/, "").trim();
+    const cleaned = entry.textContent.replace(/^\ufeff/, "").trim();
 
     if (TEXT_LIKE_EXTS.has(ext) && cleaned) {
       if (ext === "json" || cleaned.startsWith("[") || cleaned.startsWith("{")) {
@@ -82,19 +100,22 @@ export function parseLecturesFromUploadedFiles(
             : [];
 
           if (arr.length > 0) {
-            arr.forEach((raw: any, idx: number) => {
+            arr.forEach((raw: Record<string, unknown>, idx: number) => {
               if (!raw || typeof raw !== "object") return;
-              const title = String(raw.title ?? raw.name ?? raw.عنوان ?? "").trim();
+              const title = String(raw.title ?? raw.name ?? raw["عنوان"] ?? "").trim();
               if (!title) return;
-              const numRaw = Number(raw.lectureNumber ?? raw.lecture_number ?? raw.number ?? raw.رقم ?? idx + 1);
+              const numRaw = Number(raw.lectureNumber ?? raw.lecture_number ?? raw.number ?? raw["رقم"] ?? idx + 1);
               const lectureNumber = Number.isFinite(numRaw) && numRaw >= 1 ? Math.floor(numRaw) : idx + 1;
               const semRaw = Number(raw.semester ?? raw.course ?? defaultSemester);
               const semester = semRaw === 2 ? 2 : 1;
-              const description = String(raw.description ?? raw.notes ?? raw.وصف ?? "").trim();
+              const rawCat = String(raw.category ?? raw.type ?? raw["تصنيف"] ?? "").trim();
+              const category = rawCat ? detectCategoryFromText(rawCat, defaultCategory) : detectCategoryFromText(title, defaultCategory);
+              const description = String(raw.description ?? raw.notes ?? raw["وصف"] ?? "").trim();
               items.push({
                 tempId: `batch-${fileIdx}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
                 lectureNumber,
                 semester,
+                category,
                 title,
                 description,
                 selected: true,
@@ -159,6 +180,7 @@ export function parseLecturesFromUploadedFiles(
               tempId: `batch-${fileIdx}-${i}-${Math.random().toString(36).slice(2, 7)}`,
               lectureNumber,
               semester: defaultSemester,
+              category: detectCategoryFromText(title, defaultCategory),
               title,
               description: description.trim(),
               selected: true,
@@ -179,6 +201,7 @@ export function parseLecturesFromUploadedFiles(
             tempId: `batch-${fileIdx}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
             lectureNumber,
             semester: defaultSemester,
+            category: detectCategoryFromText(title, defaultCategory),
             title,
             description,
             selected: true,
@@ -190,13 +213,17 @@ export function parseLecturesFromUploadedFiles(
 
     const rawTitle = stripExtension(entry.name).replace(/[_-]+/g, " ").trim() || entry.name;
     const { lectureNumber, title } = parseLeadingNumber(rawTitle, fileIdx);
+    const detectedCat = detectCategoryFromText(entry.name, defaultCategory);
     items.push({
       tempId: `batch-file-${fileIdx}-${Math.random().toString(36).slice(2, 7)}`,
       lectureNumber,
       semester: defaultSemester,
+      category: detectedCat,
       title,
-      description: ext ? `ملف مصدر (${ext.toUpperCase()}): ${entry.name}` : entry.name,
+      description: "",
       selected: true,
+      sourceFile: entry.file,
+      sourceFileName: entry.name,
     });
   });
 

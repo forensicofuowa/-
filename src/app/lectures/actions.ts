@@ -27,14 +27,22 @@ const batchImportSchema = z.object({
   lectures: z
     .array(
       z.object({
+        clientKey: z.string().min(1),
         lectureNumber: z.number().int().min(1).max(999),
         semester: z.number().int().min(1).max(2).default(1),
+        category: z.enum(["theory", "practical"]).optional().default("theory"),
         title: z.string().min(2).max(200),
         description: z.string().max(2000).optional(),
       })
     )
     .min(1),
 });
+
+export interface CreatedBatchLectureResult {
+  clientKey: string;
+  lectureId: string;
+  category: "theory" | "practical";
+}
 
 function revalidateAllLectures() {
   for (const p of [
@@ -202,7 +210,16 @@ export async function saveLectureAction(
 
 export async function importSelectedLecturesAction(
   input: z.infer<typeof batchImportSchema>
-): Promise<{ ok: true; inserted: number; skipped: number; notificationNote?: string } | { ok: false; error: string }> {
+): Promise<
+  | {
+      ok: true;
+      inserted: number;
+      skipped: number;
+      createdLectures: CreatedBatchLectureResult[];
+      notificationNote?: string;
+    }
+  | { ok: false; error: string }
+> {
   const profile = await getSessionProfile();
   if (!profile || profile.status !== "active" || !["instructor", "admin", "super_admin"].includes(profile.role)) {
     return { ok: false, error: "غير مصرح لك باستيراد المحاضرات." };
@@ -228,6 +245,7 @@ export async function importSelectedLecturesAction(
 
   let inserted = 0;
   let skipped = 0;
+  const createdLectures: CreatedBatchLectureResult[] = [];
   let lastInserted: { id: string; lectureNumber: number; semester: number; title: string } | null = null;
 
   for (const item of lectures) {
@@ -251,6 +269,11 @@ export async function importSelectedLecturesAction(
       skipped++;
     } else {
       inserted++;
+      createdLectures.push({
+        clientKey: item.clientKey,
+        lectureId: insRow.id,
+        category: item.category ?? "theory",
+      });
       lastInserted = {
         id: insRow.id,
         lectureNumber: item.lectureNumber,
@@ -288,7 +311,7 @@ export async function importSelectedLecturesAction(
   }
 
   revalidateAllLectures();
-  return { ok: true, inserted, skipped, notificationNote };
+  return { ok: true, inserted, skipped, createdLectures, notificationNote };
 }
 
 export async function deleteLectureAction(lectureId: string) {
