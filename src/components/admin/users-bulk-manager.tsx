@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckSquare, Square, Trash2, Users } from "lucide-react";
 import {
   bulkPermanentlyDeleteUsersAction,
@@ -15,6 +16,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { formatDate, roleLabel, statusLabel } from "@/lib/utils";
 
 export function UsersBulkManager({ users }: { users: any[] }) {
+  const router = useRouter();
   const selectableUsers = users.filter((u) => u.role !== "super_admin");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
