@@ -44,7 +44,7 @@ export function BatchLectureImporter({
   academicYears: AcademicYear[];
 }) {
   const router = useRouter();
-  const [subjectId, setSubjectId] = useState(subjects[0]?.id ?? "");
+  const [subjectId, setSubjectId] = useState("");
   const [academicYearId, setAcademicYearId] = useState(
     academicYears.find((y) => y.is_current)?.id ?? academicYears[0]?.id ?? ""
   );
@@ -231,8 +231,12 @@ export function BatchLectureImporter({
 
   async function handleImportSelected() {
     const chosen = items.filter((i) => i.selected && i.title.trim().length >= 2);
-    if (!subjectId || !academicYearId) {
-      setResultMsg({ type: "err", text: "يرجى اختيار المادة والسنة الدراسية أولاً." });
+    if (!subjectId) {
+      setResultMsg({ type: "err", text: "يرجى اختيار المادة الدراسية أولاً (حقل إجباري)." });
+      return;
+    }
+    if (!academicYearId) {
+      setResultMsg({ type: "err", text: "يرجى اختيار السنة الدراسية أولاً." });
       return;
     }
     if (chosen.length === 0) {
@@ -337,13 +341,24 @@ export function BatchLectureImporter({
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                المادة الدراسية
+                المادة الدراسية <span className="text-red-500">*</span>
               </label>
               <select
+                required
                 value={subjectId}
-                onChange={(e) => setSubjectId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                onChange={(e) => {
+                  setSubjectId(e.target.value);
+                  if (resultMsg?.type === "err") setResultMsg(null);
+                }}
+                className={`w-full rounded-lg border bg-white dark:bg-slate-800 px-3 py-2 text-sm ${
+                  !subjectId
+                    ? "border-amber-400 dark:border-amber-600 text-slate-500 dark:text-slate-400"
+                    : "border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                }`}
               >
+                <option value="" disabled>
+                  -- اختر المادة الدراسية --
+                </option>
                 {subjects.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} {s.stages?.name ? `(${s.stages.name})` : ""}
@@ -512,7 +527,12 @@ export function BatchLectureImporter({
                   </>
                 )}
               </Button>
-              <Button type="button" disabled={submitting || selectedCount === 0} onClick={handleImportSelected}>
+              <Button
+                type="button"
+                disabled={submitting || selectedCount === 0 || !subjectId}
+                title={!subjectId ? "يرجى اختيار المادة الدراسية أولاً" : undefined}
+                onClick={handleImportSelected}
+              >
                 {submitting ? "جارٍ الإضافة والرفع..." : `رفع وإضافة المحدد (${selectedCount})`}
               </Button>
             </div>

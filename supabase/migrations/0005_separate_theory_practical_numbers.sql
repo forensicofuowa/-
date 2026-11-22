@@ -17,7 +17,6 @@ BEGIN
       CHECK (category IN ('theory', 'practical'));
   END IF;
 
-  -- Backfill category on existing lectures from their primary ready file if available
   UPDATE public.lectures l
   SET category = sub_cat.cat
   FROM (
