@@ -13,7 +13,7 @@ const lectureInputSchema = z.object({
   academicYearId: z.string().uuid("يرجى اختيار السنة الدراسية."),
   lectureNumber: z.number().int().min(1).max(999),
   semester: z.number().int().min(1).max(2).default(1),
-  category: z.enum(["theory", "practical"]).optional().default("theory"),
+  category: z.enum(["theory", "practical"]).nullish().transform((v) => v ?? "theory"),
   title: z.string().min(2, "يرجى إدخال عنوان المحاضرة.").max(200),
   description: z.string().max(2000).optional(),
   status: z.enum(["draft", "published", "archived"]),
@@ -31,7 +31,7 @@ const batchImportSchema = z.object({
         clientKey: z.string().min(1),
         lectureNumber: z.number().int().min(1).max(999),
         semester: z.number().int().min(1).max(2).default(1),
-        category: z.enum(["theory", "practical"]).optional().default("theory"),
+        category: z.enum(["theory", "practical"]).nullish().transform((v) => v ?? "theory"),
         title: z.string().min(2).max(200),
         description: z.string().max(2000).optional(),
       })
