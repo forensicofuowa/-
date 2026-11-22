@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -11,15 +11,19 @@ import type { AcademicYear, FileCategory, Lecture, Subject } from "@/types/datab
 export function LectureForm({
   lecture,
   redirectPath,
+  basePath,
   subjects,
   academicYears,
 }: {
   lecture?: Partial<Lecture> & { id?: string };
-  redirectPath: "/admin/lectures" | "/instructor/lectures";
+  redirectPath?: "/admin/lectures" | "/instructor/lectures" | string;
+  basePath?: "/admin/lectures" | "/instructor/lectures" | string;
   subjects: Subject[];
   academicYears: AcademicYear[];
 }) {
   const router = useRouter();
+  const resolvedTargetPath = redirectPath ?? basePath ?? "/admin/lectures";
+
   const [subjectId, setSubjectId] = useState(lecture?.subject_id ?? subjects[0]?.id ?? "");
   const [academicYearId, setAcademicYearId] = useState(
     lecture?.academic_year_id ??
@@ -70,7 +74,7 @@ export function LectureForm({
       return;
     }
 
-    router.push(lecture?.id ? redirectPath : `${redirectPath}/${res.id}/edit`);
+    router.push(lecture?.id ? resolvedTargetPath : `${resolvedTargetPath}/${res.id}/edit`);
     router.refresh();
   }
 
@@ -240,7 +244,7 @@ export function LectureForm({
           )}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => router.push(redirectPath)}>
+            <Button type="button" variant="outline" onClick={() => router.push(resolvedTargetPath)}>
               إلغاء
             </Button>
             <Button type="submit" disabled={submitting}>
