@@ -2,25 +2,62 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckSquare, Square, Trash2, Users } from "lucide-react";
+import { CheckSquare, FileUp, KeyRound, Square, Trash2, Users } from "lucide-react";
 import {
-  bulkPermanentlyDeleteUsersAction,
   bulkUpdateUsersAction,
   permanentlyDeleteUserAction,
   updateUserAccountAction,
 } from "@/app/admin/actions";
+import {
+  adminUpdateUserPasswordAction,
+  toggleStudentSummaryUploadAction,
+} from "@/app/admin/actions-additions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UiverseCheckbox } from "@/components/ui/uiverse-checkbox";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { formatDate, roleLabel, statusLabel } from "@/lib/utils";
+import { roleLabel, statusLabel } from "@/lib/utils";
 
-export function UsersBulkManager({ users }: { users: any[] }) {
+type UserRow = {
+  id: string;
+  full_name?: string | null;
+  email?: string | null;
+  role: string;
+  status: string;
+  created_at?: string | null;
+  can_upload_summaries?: boolean | null;
+  admin_password_note?: string | null;
+  stages?: { name?: string | null } | null;
+};
+
+function formatFullDateTime(iso?: string | null): { dateLine: string; timeLine: string } {
+  if (!iso) return { dateLine: "—", timeLine: "—" };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { dateLine: "—", timeLine: "—" };
+
+  const dateLine = new Intl.DateTimeFormat("ar-IQ", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(d);
+
+  const timeLine = new Intl.DateTimeFormat("ar-IQ", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+
+  return { dateLine, timeLine };
+}
+
+export function UsersBulkManager({ users }: { users: UserRow[] }) {
   const router = useRouter();
   const selectableUsers = users.filter((u) => u.role !== "super_admin");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [busy, setBusy] = useState<boolean>(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [passwordInputs, setPasswordInputs] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const filteredUsers = users.filter((u) =>
@@ -59,10 +96,10 @@ export function UsersBulkManager({ users }: { users: any[] }) {
     );
     if (!confirmed) return;
 
-    setBusy(true);
+    setBusyId(userId);
     setMessage(null);
     const res = await permanentlyDeleteUserAction(userId);
-    setBusy(false);
+    setBusyId(null);
     if (!res.ok) {
       setMessage({ type: "err", text: res.error ?? "تعذّر حذف المستخدم نهائياً." });
       return;
@@ -71,6 +108,48 @@ export function UsersBulkManager({ users }: { users: any[] }) {
     setMessage({
       type: "ok",
       text: `تم حذف (${fullName}) نهائياً من قاعدة البيانات. يمكنه التسجيل من جديد بانتظار موافقتك.`,
+    });
+    router.refresh();
+  }
+
+  async function handlePasswordSave(userId: string, fullName: string) {
+    const nextPass = (passwordInputs[userId] ?? "").trim();
+    if (nextPass.length < 6) {
+      setMessage({ type: "err", text: "أدخل كلمة مرور جديدة من 6 أحرف على الأقل." });
+      return;
+    }
+
+    setBusyId(userId);
+    setMessage(null);
+    const res = await adminUpdateUserPasswordAction(userId, nextPass);
+    setBusyId(null);
+
+    if (!res.ok) {
+      setMessage({ type: "err", text: res.error ?? "تعذّر تحديث كلمة المرور." });
+      return;
+    }
+
+    setPasswordInputs((prev) => ({ ...prev, [userId]: "" }));
+    setMessage({ type: "ok", text: `تم تحديث كلمة مرور (${fullName}) بنجاح.` });
+    router.refresh();
+  }
+
+  async function handleToggleSummaryUpload(userId: string, currentValue: boolean, fullName: string) {
+    setBusyId(userId);
+    setMessage(null);
+    const res = await toggleStudentSummaryUploadAction(userId, !currentValue);
+    setBusyId(null);
+
+    if (!res.ok) {
+      setMessage({ type: "err", text: res.error ?? "تعذّر تحديث صلاحية رفع المرفقات." });
+      return;
+    }
+
+    setMessage({
+      type: "ok",
+      text: !currentValue
+        ? `تم تفعيل رفع المرفقات للطالب (${fullName}).`
+        : `تم إيقاف رفع المرفقات للطالب (${fullName}).`,
     });
     router.refresh();
   }
@@ -88,199 +167,273 @@ export function UsersBulkManager({ users }: { users: any[] }) {
           {message.text}
         </div>
       )}
-    <Card>
-      <CardHeader className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-indigo-600" />
-            <h2 className="font-bold text-slate-800 dark:text-slate-100">
-              قائمة الحسابات ({filteredUsers.length} من {users.length})
-            </h2>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs"
-            >
-              <option value="all">جميع الحالات</option>
-              <option value="pending">قيد المراجعة فقط</option>
-              <option value="active">المفعّلون فقط</option>
-              <option value="disabled">المعطّلون فقط</option>
-            </select>
-
-            <Button type="button" size="sm" variant="outline" onClick={selectAllPending}>
-              تحديد كل المعلّقين ({selectableUsers.filter((u) => u.status === "pending").length})
-            </Button>
-          </div>
-        </div>
-
-        {/* Bulk Action Bar */}
-        {selectedIds.length > 0 && (
-          <form
-            action={bulkUpdateUsersAction}
-            onSubmit={() => setTimeout(() => setSelectedIds([]), 200)}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 px-4 py-2.5"
-          >
-            <input type="hidden" name="userIds" value={JSON.stringify(selectedIds)} />
-            <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
-              تم تحديد {selectedIds.length} حساب للإجراء الجماعي:
-            </span>
+      <Card>
+        <CardHeader className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-indigo-600" />
+              <h2 className="font-bold text-slate-800 dark:text-slate-100">
+                قائمة الحسابات ({filteredUsers.length} من {users.length})
+              </h2>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <select
-                name="bulkStatus"
-                defaultValue="active"
-                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs"
               >
-                <option value="">— بدون تغيير الحالة —</option>
-                <option value="active">موافقة وتفعيل (Active)</option>
-                <option value="disabled">تعطيل الحسابات (Disabled)</option>
-                <option value="pending">إعادة للمراجعة (Pending)</option>
+                <option value="all">جميع الحالات</option>
+                <option value="pending">قيد المراجعة فقط</option>
+                <option value="active">المفعّلون فقط</option>
+                <option value="disabled">المعطّلون فقط</option>
               </select>
 
-              <select
-                name="bulkRole"
-                defaultValue=""
-                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs"
-              >
-                <option value="">— بدون تغيير الدور —</option>
-                <option value="student">تحويل إلى طالب</option>
-                <option value="instructor">تحويل إلى تدريسي</option>
-                <option value="admin">تحويل إلى مدير</option>
-              </select>
-
-              <Button type="submit" size="sm">
-                تطبيق على المحدد ({selectedIds.length})
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
-                إلغاء
+              <Button type="button" size="sm" variant="outline" onClick={selectAllPending}>
+                تحديد كل المعلّقين ({selectableUsers.filter((u) => u.status === "pending").length})
               </Button>
             </div>
-          </form>
-        )}
-      </CardHeader>
+          </div>
 
-      <CardContent className="p-0 overflow-x-auto">
-        <table className="w-full text-sm text-right">
-          <thead className="bg-slate-50 dark:bg-slate-800/70 text-xs text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800">
-            <tr>
-              <th className="px-4 py-3 w-10">
-                <button
-                  type="button"
-                  onClick={toggleAll}
-                  className="text-slate-600 dark:text-slate-300 hover:text-indigo-600"
-                  title="تحديد الكل"
+          {selectedIds.length > 0 && (
+            <form
+              action={bulkUpdateUsersAction}
+              onSubmit={() => setTimeout(() => setSelectedIds([]), 200)}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 px-4 py-2.5"
+            >
+              <input type="hidden" name="userIds" value={JSON.stringify(selectedIds)} />
+              <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                تم تحديد {selectedIds.length} حساب للإجراء الجماعي:
+              </span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  name="bulkStatus"
+                  defaultValue="active"
+                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs"
                 >
-                  {allChecked ? <CheckSquare className="h-4 w-4 text-indigo-600" /> : <Square className="h-4 w-4" />}
-                </button>
-              </th>
-              <th className="px-4 py-3">الاسم والبريد</th>
-              <th className="px-4 py-3">المرحلة</th>
-              <th className="px-4 py-3">الدور</th>
-              <th className="px-4 py-3">الحالة</th>
-              <th className="px-4 py-3">تاريخ التسجيل</th>
-              <th className="px-4 py-3">إجراء فردي</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {filteredUsers.map((u: any) => {
-              const isSelected = selectedIds.includes(u.id);
-              return (
-                <tr
-                  key={u.id}
-                  className={
-                    isSelected
-                      ? "bg-indigo-50/40 dark:bg-indigo-950/30"
-                      : "hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
-                  }
+                  <option value="">— بدون تغيير الحالة —</option>
+                  <option value="active">موافقة وتفعيل (Active)</option>
+                  <option value="disabled">تعطيل الحسابات (Disabled)</option>
+                  <option value="pending">إعادة للمراجعة (Pending)</option>
+                </select>
+
+                <select
+                  name="bulkRole"
+                  defaultValue=""
+                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs"
                 >
-                  <td className="px-4 py-3">
-                    {u.role !== "super_admin" ? (
-                      <UiverseCheckbox
-                        checked={isSelected}
-                        onChange={() => toggleOne(u.id)}
-                        ariaLabel={`تحديد حساب ${u.full_name}`}
-                      />
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">{u.full_name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400" dir="ltr">
-                      {u.email}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{u.stages?.name ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Badge tone="indigo">{roleLabel(u.role)}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge
-                      tone={
-                        u.status === "active"
-                          ? "green"
-                          : u.status === "pending"
-                          ? "amber"
-                          : "red"
-                      }
-                    >
-                      {statusLabel(u.status)}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
-                    {formatDate(u.created_at)}
-                  </td>
-                  <td className="px-4 py-3">
-                    {u.role !== "super_admin" ? (
-                      <form action={updateUserAccountAction} className="flex flex-wrap items-center gap-1.5">
-                        <input type="hidden" name="userId" value={u.id} />
-                        <select
-                          name="role"
-                          defaultValue={u.role}
-                          className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs"
-                        >
-                          <option value="student">طالب</option>
-                          <option value="instructor">تدريسي</option>
-                          <option value="admin">مدير</option>
-                        </select>
-                        <select
-                          name="status"
-                          defaultValue={u.status}
-                          className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs"
-                        >
-                          <option value="active">مفعّل</option>
-                          <option value="pending">قيد المراجعة</option>
-                          <option value="disabled">معطّل</option>
-                        </select>
-                        <Button type="submit" size="sm">
-                          حفظ
-                        </Button>
-                      </form>
+                  <option value="">— بدون تغيير الدور —</option>
+                  <option value="student">تحويل إلى طالب</option>
+                  <option value="instructor">تحويل إلى تدريسي</option>
+                  <option value="admin">تحويل إلى مدير</option>
+                </select>
+
+                <Button type="submit" size="sm">
+                  تطبيق على المحدد ({selectedIds.length})
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
+                  إلغاء
+                </Button>
+              </div>
+            </form>
+          )}
+        </CardHeader>
+
+        <CardContent className="p-0 overflow-x-auto">
+          <table className="w-full text-sm text-right">
+            <thead className="bg-slate-50 dark:bg-slate-800/70 text-xs text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800">
+              <tr>
+                <th className="px-4 py-3 w-10">
+                  <button
+                    type="button"
+                    onClick={toggleAll}
+                    className="text-slate-600 dark:text-slate-300 hover:text-indigo-600"
+                    title="تحديد الكل"
+                  >
+                    {allChecked ? (
+                      <CheckSquare className="h-4 w-4 text-indigo-600" />
                     ) : (
-                      <span className="text-xs text-slate-400">مشرف عام</span>
+                      <Square className="h-4 w-4" />
                     )}
-                    {u.role !== "super_admin" && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="danger"
-                      disabled={busy}
-                      onClick={() => handlePermanentDeleteOne(u.id, u.full_name)}
-                      title="حذف نهائي من قاعدة البيانات"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      <span>حذف نهائي</span>
-                    </Button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </CardContent>
-    </Card>
+                  </button>
+                </th>
+                <th className="px-4 py-3">الاسم والبريد</th>
+                <th className="px-4 py-3">المرحلة</th>
+                <th className="px-4 py-3">الدور</th>
+                <th className="px-4 py-3">الحالة</th>
+                <th className="px-4 py-3">وقت التسجيل</th>
+                <th className="px-4 py-3">كلمة السر ورفع المرفقات</th>
+                <th className="px-4 py-3">إجراء فردي</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredUsers.map((u) => {
+                const isSelected = selectedIds.includes(u.id);
+                const displayName = u.full_name ?? "مستخدم";
+                const dt = formatFullDateTime(u.created_at);
+                const isRowBusy = busyId === u.id;
+                const canUpload = Boolean(u.can_upload_summaries);
+
+                return (
+                  <tr
+                    key={u.id}
+                    className={
+                      isSelected
+                        ? "bg-indigo-50/40 dark:bg-indigo-950/30"
+                        : "hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
+                    }
+                  >
+                    <td className="px-4 py-3">
+                      {u.role !== "super_admin" ? (
+                        <UiverseCheckbox
+                          checked={isSelected}
+                          onChange={() => toggleOne(u.id)}
+                          ariaLabel={`تحديد حساب ${displayName}`}
+                        />
+                      ) : null}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">{displayName}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400" dir="ltr">
+                        {u.email ?? "—"}
+                      </p>
+                    </td>
+
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                      {u.stages?.name ?? "—"}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Badge tone="indigo">{roleLabel(u.role)}</Badge>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Badge
+                        tone={
+                          u.status === "active"
+                            ? "green"
+                            : u.status === "pending"
+                            ? "amber"
+                            : "red"
+                        }
+                      >
+                        {statusLabel(u.status)}
+                      </Badge>
+                    </td>
+
+                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
+                      <p>{dt.dateLine}</p>
+                      <p className="text-slate-400 mt-0.5">{dt.timeLine}</p>
+                    </td>
+
+                    <td className="px-4 py-3 space-y-2 min-w-[230px]">
+                      {u.role !== "super_admin" ? (
+                        <>
+                          <div className="text-xs text-slate-600 dark:text-slate-300">
+                            <span className="font-medium">كلمة السر: </span>
+                            <span dir="ltr" className="font-mono">
+                              {u.admin_password_note || "غير محفوظة"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={passwordInputs[u.id] ?? ""}
+                              onChange={(e) =>
+                                setPasswordInputs((prev) => ({ ...prev, [u.id]: e.target.value }))
+                              }
+                              placeholder="كلمة سر جديدة"
+                              className="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs"
+                              dir="ltr"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={isRowBusy}
+                              onClick={() => handlePasswordSave(u.id, displayName)}
+                              title="تغيير كلمة السر من طرف الإدارة"
+                            >
+                              <KeyRound className="h-3.5 w-3.5" />
+                              <span>تغيير</span>
+                            </Button>
+                          </div>
+
+                          {u.role === "student" && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={canUpload ? "primary" : "outline"}
+                              disabled={isRowBusy}
+                              onClick={() => handleToggleSummaryUpload(u.id, canUpload, displayName)}
+                            >
+                              <FileUp className="h-3.5 w-3.5" />
+                              <span>{canUpload ? "رفع المرفقات: مفعّل" : "تفعيل رفع المرفقات"}</span>
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-400">مشرف عام</span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {u.role !== "super_admin" ? (
+                          <form action={updateUserAccountAction} className="flex flex-wrap items-center gap-1.5">
+                            <input type="hidden" name="userId" value={u.id} />
+                            <select
+                              name="role"
+                              defaultValue={u.role}
+                              className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs"
+                            >
+                              <option value="student">طالب</option>
+                              <option value="instructor">تدريسي</option>
+                              <option value="admin">مدير</option>
+                            </select>
+                            <select
+                              name="status"
+                              defaultValue={u.status}
+                              className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs"
+                            >
+                              <option value="active">مفعّل</option>
+                              <option value="pending">قيد المراجعة</option>
+                              <option value="disabled">معطّل</option>
+                            </select>
+                            <Button type="submit" size="sm">
+                              حفظ
+                            </Button>
+                          </form>
+                        ) : (
+                          <span className="text-xs text-slate-400">مشرف عام</span>
+                        )}
+
+                        {u.role !== "super_admin" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            disabled={isRowBusy}
+                            onClick={() => handlePermanentDeleteOne(u.id, displayName)}
+                            title="حذف نهائي من قاعدة البيانات"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>حذف نهائي</span>
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

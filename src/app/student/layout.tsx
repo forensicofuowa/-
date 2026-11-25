@@ -8,12 +8,12 @@ export default async function StudentLayout({ children }: { children: React.Reac
     <DashboardShell
       profile={profile}
       navItems={[
-        { href: "/student/dashboard", label: "الرئيسية والتبليغات", icon: "dashboard" },
         { href: "/student/lectures", label: "مكتبة المحاضرات", icon: "lectures" },
         { href: "/student/schedule", label: "الجدول والامتحانات", icon: "schedule" },
         { href: "/student/timer", label: "مؤقت الدراسة والتركيز", icon: "timer" },
         { href: "/student/summary", label: "ملف إنجازي", icon: "summary" },
         { href: "/student/favorites", label: "المفضلة", icon: "favorites" },
+        { href: "/student/support", label: "تواصل مع الإدارة", icon: "summary" },
       ]}
     >
       {children}

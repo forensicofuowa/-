@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { notifyAdminNewUserRegistration } from "@/lib/notify-new-registration";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const loginSchema = z.object({
@@ -60,7 +62,7 @@ export async function registerAction(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
@@ -78,6 +80,25 @@ export async function registerAction(
     }
     return { error: error.message };
   }
+
+  if (data.user?.id) {
+    try {
+      const admin = createAdminClient();
+      await admin
+        .from("profiles")
+        .update({ admin_password_note: parsed.data.password })
+        .eq("id", data.user.id);
+    } catch {
+      // Do not block registration if password note update fails
+    }
+  }
+
+  await notifyAdminNewUserRegistration({
+    fullName: parsed.data.fullName,
+    email: parsed.data.email,
+    role: parsed.data.role,
+    stageId: parsed.data.role === "student" ? parsed.data.stageId : undefined,
+  });
 
   redirect("/pending-approval");
 }
