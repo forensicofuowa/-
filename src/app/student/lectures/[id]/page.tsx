@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowRight, CheckCircle2, FolderDown, Heart } from "lucide-react";
 import { toggleFavoriteAction, toggleLectureCompletedAction } from "@/app/student/actions";
 import { InlineFileViewer } from "@/components/lectures/inline-file-viewer";
+import { StudentSummaryUploader } from "@/components/student/student-summary-uploader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -22,34 +23,45 @@ export default async function StudentLectureDetailPage({
   const profile = await requireRole(["student", "instructor", "admin", "super_admin"]);
   const supabase = await createClient();
 
-  const [{ data: lecture }, { data: files }, { data: fav }, { data: viewRow }, { data: subjects }, { data: stages }] =
-    await Promise.all([
-      supabase.from("lectures").select("*").eq("id", id).eq("status", "published").maybeSingle(),
-      supabase
-        .from("lecture_files")
-        .select("*")
-        .eq("lecture_id", id)
-        .eq("status", "ready")
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("favorites")
-        .select("lecture_id")
-        .eq("student_id", profile.id)
-        .eq("lecture_id", id)
-        .maybeSingle(),
-      supabase
-        .from("student_lecture_views")
-        .select("is_completed")
-        .eq("student_id", profile.id)
-        .eq("lecture_id", id)
-        .maybeSingle(),
-      supabase.from("subjects").select("id, name, stage_id"),
-      supabase.from("stages").select("id, name"),
-    ]);
+  const [
+    { data: lecture },
+    { data: files },
+    { data: fav },
+    { data: viewRow },
+    { data: subjects },
+    { data: stages },
+    { data: dbProfile },
+  ] = await Promise.all([
+    supabase.from("lectures").select("*").eq("id", id).eq("status", "published").maybeSingle(),
+    supabase
+      .from("lecture_files")
+      .select("*")
+      .eq("lecture_id", id)
+      .eq("status", "ready")
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("favorites")
+      .select("lecture_id")
+      .eq("student_id", profile.id)
+      .eq("lecture_id", id)
+      .maybeSingle(),
+    supabase
+      .from("student_lecture_views")
+      .select("is_completed")
+      .eq("student_id", profile.id)
+      .eq("lecture_id", id)
+      .maybeSingle(),
+    supabase.from("subjects").select("id, name, stage_id"),
+    supabase.from("stages").select("id, name"),
+    supabase
+      .from("profiles")
+      .select("role, status, can_upload_summaries")
+      .eq("id", profile.id)
+      .maybeSingle(),
+  ]);
 
   if (!lecture) notFound();
 
-  // Record that student opened this lecture for Study Summary
   await supabase.from("student_lecture_views").upsert(
     {
       student_id: profile.id,
@@ -66,6 +78,18 @@ export default async function StudentLectureDetailPage({
   const stageMap = new Map((stages ?? []).map((s: any) => [s.id, s.name]));
   const sub = (subjects ?? []).find((s: any) => s.id === (lecture as any).subject_id);
   const typedFiles = (files as LectureFile[]) ?? [];
+
+  const canUpload =
+    dbProfile?.role === "admin" ||
+    dbProfile?.role === "super_admin" ||
+    dbProfile?.role === "instructor" ||
+    (dbProfile?.role === "student" &&
+      dbProfile?.status === "active" &&
+      Boolean(dbProfile?.can_upload_summaries));
+
+  const studentSummaries = typedFiles.filter(
+    (f: any) => f.uploaded_by_role === "student" || f.category === "summary"
+  );
 
   return (
     <div className="space-y-6">
@@ -130,7 +154,7 @@ export default async function StudentLectureDetailPage({
               ملفات المحاضرة ({typedFiles.length})
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              اضغط "معاينة مدمجة" لفتح ملفات PDF والصور داخل الصفحة مع التكبير وملء الشاشة
+              اضغط &quot;معاينة مدمجة&quot; لفتح ملفات PDF والصور داخل الصفحة مع التكبير وملء الشاشة
             </p>
           </div>
 
@@ -146,12 +170,21 @@ export default async function StudentLectureDetailPage({
 
         <CardContent className="p-0">
           {typedFiles.length === 0 ? (
-            <p className="p-6 text-center text-sm text-slate-500">لا توجد مرفقات لهذه المحاضرة حالياً.</p>
+            <p className="p-6 text-center text-sm text-slate-500">
+              لا توجد مرفقات لهذه المحاضرة حالياً.
+            </p>
           ) : (
             <InlineFileViewer files={typedFiles} />
           )}
         </CardContent>
       </Card>
+
+      <StudentSummaryUploader
+        lectureId={(lecture as any).id}
+        canUpload={canUpload}
+        currentUserId={profile.id}
+        existingSummaries={studentSummaries}
+      />
     </div>
   );
 }
